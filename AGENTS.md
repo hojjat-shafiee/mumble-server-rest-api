@@ -76,10 +76,15 @@ To run both the Murmur VoIP server and the REST API connected together:
 docker compose up -d --build
 ```
 
-### Running Tests Locally
+### Running Autonomous Verification & Tests
 The test suite utilizes mock Ice stubs, allowing tests to run anywhere (including Windows and macOS without native `python3-zeroc-ice` installed):
 ```bash
-pip install -r requirements-dev.txt
+# Single-command verification (architecture invariant checks, linting, tests)
+make check
+# or
+python scripts/verify.py
+
+# Run pytest directly
 pytest -v
 ```
 
@@ -127,15 +132,18 @@ When editing or extending this codebase, adhere strictly to these conventions:
 
 ## 6. Multi-Tool Agent Ecosystem Map
 
-This repository maintains synchronized configuration for the leading AI coding assistants:
+This repository maintains synchronized configuration for the leading AI coding assistants and context standards:
 
 | Agent / Tool | Configuration File(s) | Role & Scope |
 | :--- | :--- | :--- |
 | **Universal / Root** | `AGENTS.md` | Primary cross-tool source of truth and architectural guardrails |
+| **LLM Context Standards** | `llms.txt`, `llms-full.txt` | Spec-compliant discovery and context intake (llmstxt.org) |
 | **Claude Code** | `CLAUDE.md` | Anthropic CLI agent instructions and fast verification commands |
-| **GitHub Copilot** | `.github/copilot-instructions.md` | Repository-wide instructions for Copilot Chat and Code Review |
+| **GitHub Copilot** | `.github/copilot-instructions.md`, `.github/instructions/*.md` | Repository-wide and scoped instructions for Copilot Chat & Workspace |
+| **Specialized Agents** | `.github/agents/*.md` | Role personas: PR Reviewer, RPC Specialist, Test Generator |
 | **Cursor IDE** | `.cursor/rules/*.mdc`, `.cursorrules` | Granular scoped rules (`fastapi-endpoints`, `zeroc-ice-rpc`, etc.) |
 | **Windsurf Cascade** | `.windsurf/rules/rules.md`, `.windsurfrules` | Cascade agent directives and workflow rules |
+| **Cline & Roo Code** | `.clinerules`, `.roomodes` | Path-targeted rules and least-privilege mode configurations |
 | **Aider CLI** | `.aider.conf.yml` | Auto-test (`pytest`) and auto-lint (`ruff`) configuration |
 | **Dev Containers** | `.devcontainer/devcontainer.json` | Pre-configured environment for cloud and containerized agents |
 
@@ -144,6 +152,8 @@ This repository maintains synchronized configuration for the leading AI coding a
 ## 7. Progressive Disclosure & Further Reading
 
 For deeper domain knowledge without polluting root context windows:
+- **[Repository Map](docs/repository-map.md)**: Token-saving index of files, exported symbols, and architecture call flows.
 - **[System Architecture](docs/architecture.md)**: ZeroC Ice RPC lifecycle, threadpool delegation, Slice stubs, and exception translation.
 - **[Agent Implementation Workflow](docs/agent-workflow.md)**: Step-by-step checklist for building new endpoints, models, and mock tests.
+- **[Architecture Decision Records](docs/adr/)**: Permanent record of foundational design decisions (ADR-0001 to ADR-0004).
 

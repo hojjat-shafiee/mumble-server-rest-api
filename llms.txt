@@ -1,0 +1,27 @@
+# mumble-server-rest-api
+> RESTful API wrapper for Murmur (Mumble VoIP Server) built with FastAPI and ZeroC Ice RPC.
+
+## Core Documentation
+- [Repository Map](docs/repository-map.md): Comprehensive module index, symbol dictionary, and architecture call graph.
+- [System Architecture](docs/architecture.md): Deep-dive into ZeroC Ice RPC lifecycle, synchronous threadpool delegation, and exception mapping.
+- [Agent Implementation Workflow](docs/agent-workflow.md): Step-by-step checklist for building new endpoints, models, and mock tests.
+- [Root Agent Instructions](AGENTS.md): Primary cross-tool source of truth and architectural guardrails for AI coding assistants.
+- [Claude Code Guide](CLAUDE.md): Fast commands, non-negotiable rules, and canonical patterns for Anthropic CLI agents.
+
+## Architectural Decision Records (ADRs)
+- [ADR-0001: Synchronous Ice RPC in Starlette Threadpool](docs/adr/0001-synchronous-ice-rpc-in-threadpool.md): Why route handlers calling ZeroC Ice use synchronous def instead of async def.
+- [ADR-0002: Mock Ice Stubs for Cross-Platform Testing](docs/adr/0002-mock-ice-stubs-for-cross-platform-testing.md): Why and how mock ZeroC Ice proxies enable testing without native C++ compilation.
+- [ADR-0003: Pydantic v2 Models & Password Masking](docs/adr/0003-pydantic-v2-and-password-masking.md): Schema validation architecture and security enforcement for server secrets.
+- [ADR-0004: Multi-Agent Instruction Architecture](docs/adr/0004-multi-agent-instruction-architecture.md): Standardized configuration structure across Claude, Cursor, Windsurf, Copilot, Cline, and Roo Code.
+
+## Agent Configuration & Rules
+- [Cline Rules](.clinerules): Targeted execution constraints, path globs, and tool protocols for Cline and Roo Code.
+- [Roo Code Modes](.roomodes): Role definitions and least-privilege tool assignments (Architect, Code, Test, Security).
+- [Cursor Scoped Rules](.cursor/rules/): Granular rules for FastAPI endpoints, Pydantic models, testing, and ZeroC Ice RPC.
+- [GitHub Copilot Instructions](.github/copilot-instructions.md): Repository-wide instructions for Copilot Chat and PR review.
+- [Scoped Copilot Instructions](.github/instructions/): Task-specific guidance for FastAPI, ZeroC Ice, testing, and security.
+
+## Optional
+- [Full LLM Archive](llms-full.txt): Monolithic text dump combining architecture, schema, and API contracts for single-read agent ingestion.
+- [CI Workflow](.github/workflows/ci.yml): GitHub Actions automated test execution and Docker container build verification.
+

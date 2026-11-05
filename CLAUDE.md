@@ -19,7 +19,12 @@ Guidance for Anthropic Claude Code and related AI agents working in `mumble-serv
 
 ### Verification & Testing
 ```bash
-# Run full test suite (uses mock Ice stubs, runs anywhere without native Ice installed)
+# Automated agent verification (checks architecture rules, ruff lint, and pytest)
+make check
+# or
+python scripts/verify.py
+
+# Run full test suite directly (uses mock Ice stubs, runs anywhere without native Ice installed)
 pytest
 
 # Run tests with verbose output

@@ -1,0 +1,70 @@
+# Cline Rules — mumble-server-rest-api
+# Version: 1.0.0
+# Scope: Project-wide guidelines for Cline & Roo Code agents
+
+---
+paths:
+  - "app/**"
+  - "tests/**"
+  - "main.py"
+  - "settings.py"
+---
+
+# 1. Non-Negotiable Core Directives
+
+1. **Synchronous `def` for ZeroC Ice RPC**:
+   - ZeroC Ice uses blocking C++ network socket calls.
+   - Any FastAPI route function or dependency calling Ice (`meta.*`, `server.*`) **must** use standard synchronous `def`, **never** `async def`.
+   - FastAPI automatically dispatches synchronous `def` functions to Starlette's threadpool (`run_in_threadpool`).
+   - Using `async def` with Ice blocks the main asyncio event loop and will be rejected.
+
+2. **Route Order Precedence**:
+   - In `app/server_router.py`, static routes (`/servers/version`, `/servers/deleteServers`, `/servers/userCount`) **must be declared before** parameterized routes (`/servers/{id}`).
+   - Failure to do this causes FastAPI's routing tree to treat static strings as integer IDs, producing `422 Unprocessable Entity` errors.
+
+3. **Exception Handling**:
+   - Every route interacting with Ice must be decorated with `@handle_ice_errors` from `app.exceptions`.
+   - Map missing entities to `HTTPException(status_code=404, detail="Server ID {id} not found")`.
+
+4. **Security & Password Masking**:
+   - Mutating routes (`POST`, `PATCH`, `DELETE`) require `_auth: bool = Depends(verify_api_key)`.
+   - When returning server configuration dictionaries or details, inspect `settings.MASK_PASSWORDS`. If `True`, replace server passwords with `"***"`.
+
+5. **Immutable Files**:
+   - **DO NOT** edit `Murmur_ice.py`. It is generated code produced by `slice2py` from `Murmur.ice`.
+   - **DO NOT** modify `Murmur.ice` unless there is an upstream Slice interface change.
+   - **DO NOT** delete legacy routes marked with `include_in_schema=False`.
+
+---
+
+# 2. Scoped Path Rules
+
+### When editing `app/server_router.py`:
+- Always import dependencies from `app.ice_manager` (`get_ice_meta`) and `app.security` (`verify_api_key`).
+- Ensure all route functions have explicit `response_model` annotations.
+- Keep helper logic in `app/utils.py`.
+
+### When editing `app/models.py`:
+- Use Pydantic v2 syntax: `model_config = ConfigDict(extra="ignore")`.
+- Provide descriptive `Field(..., description="...")` metadata for OpenAPI documentation.
+
+### When editing `tests/`:
+- Never introduce live network calls or connect to external ports.
+- Inject the mock communicator and proxies via the `mock_ice_meta` fixture in `tests/conftest.py`.
+- Mirror any new Murmur Slice methods in `tests/mock_ice.py`.
+
+---
+
+# 3. Autonomous Verification Protocol
+
+After making any code changes, execute the verification suite:
+```bash
+pytest
+```
+Optional complete check:
+```bash
+python scripts/verify.py
+```
+- Ensure 0 errors, 0 failures, and 100% test pass rate.
+- If a test fails, analyze the mock behavior in `tests/mock_ice.py` and fix the root issue before concluding.
+

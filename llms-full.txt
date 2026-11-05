@@ -1,0 +1,120 @@
+# mumble-server-rest-api — Complete Technical & Agent Context Archive
+
+> This file contains the complete, unabridged architectural, operational, and development context for `mumble-server-rest-api` to enable single-request ingestion by AI coding agents and LLM inference pipelines.
+
+---
+
+# SECTION 1: ARCHITECTURAL PRINCIPLES & SYSTEM DESIGN
+
+`mumble-server-rest-api` is a high-performance RESTful API microservice written with FastAPI to manage and administer virtual Mumble servers (Murmur) via ZeroC Ice RPC. It replaces legacy Flask-based implementations (`Murmur-REST`) with modern typed Pydantic v2 schemas, automated OpenAPI documentation, structured exception mapping, and threadpool-isolated RPC communication.
+
+### 1.1 ZeroC Ice RPC & Threading Execution Model
+Murmur exposes its internal management engine exclusively via ZeroC Ice RPC (Internet Communications Engine) over TCP port 6502. The official ZeroC Ice Python bindings (`Ice` / `python3-zeroc-ice`) are compiled C++ extensions that perform synchronous, blocking socket calls.
+
+CRITICAL ARCHITECTURAL CONVENTION:
+Route handlers interacting with ZeroC Ice MUST be declared using standard synchronous Python functions (`def endpoint(...)`), NEVER asynchronous coroutines (`async def endpoint(...)`).
+- When FastAPI encounters a synchronous `def` route, it offloads the function call to Starlette's worker threadpool (`starlette.concurrency.run_in_threadpool`).
+- If an agent incorrectly uses `async def`, the blocking ZeroC Ice socket operations execute directly on the main asyncio event loop, freezing all concurrent HTTP requests and causing server-wide timeouts.
+
+### 1.2 Ice Connection Lifecycle & Dependency Injection
+1. Connection lifecycle is managed through the FastAPI `lifespan` context manager in `main.py`.
+2. `app.ice_manager.IceManager` manages the `Ice.Communicator` instance lazily.
+3. Endpoints obtain the Murmur Meta proxy through FastAPI dependency injection:
+   ```python
+   meta: Murmur.MetaPrx = Depends(get_ice_meta)
+   ```
+4. In test environments, `app.ice_manager.ice_manager.set_meta(...)` allows injection of mock stubs (`tests/mock_ice.py`), enabling complete test coverage on platforms without native ZeroC Ice C++ libraries (such as Windows, macOS, or non-Debian environments).
+
+### 1.3 Exception Handling & HTTP Mapping Matrix
+ZeroC Ice exceptions are captured by the `@handle_ice_errors` decorator in `app.exceptions.py` and mapped to standard HTTP response codes:
+- `Murmur.InvalidSecretException` -> `401 Unauthorized` (Ice administrative secret rejected)
+- `Murmur.ServerBootFailedException` -> `400 Bad Request` (Server port conflict or Murmur boot error)
+- `Murmur.ServerCallbackException` -> `400 Bad Request` (Invalid callback hook)
+- `Ice.ConnectionRefusedException` -> `503 Service Unavailable` (Murmur daemon unreachable)
+- `Ice.ConnectTimeoutException` -> `503 Service Unavailable` (Connection initiation timed out)
+- `Ice.TimeoutException` -> `504 Gateway Timeout` (RPC call exceeded invocation timeout)
+- `Ice.InvocationTimeoutException` -> `504 Gateway Timeout`
+- `Ice.Exception` (Generic) -> `500 Internal Server Error`
+
+---
+
+# SECTION 2: API REST CONTRACT & ROUTE DESIGN
+
+### 2.1 Route Registration Precedence
+In `app/server_router.py`, all static routes MUST be declared before parameterized routes (`/{id}`):
+1. `GET /servers/version` — Returns Murmur server version tuple and string
+2. `POST /servers/deleteServers` — Batch delete multiple virtual servers
+3. `GET /servers/userCount` — Returns total active user count across all running servers
+4. `GET /servers` — List all virtual servers with status and port
+5. `POST /servers` — Create a new virtual server
+6. `GET /servers/{id}` — Get detailed configuration and parameters for server ID
+7. `DELETE /servers/{id}` — Delete a virtual server
+8. `PATCH /servers/{id}` — Update configuration dictionary for server ID
+9. `POST /servers/{id}/start` — Start a virtual server instance
+10. `POST /servers/{id}/stop` — Stop a virtual server instance
+11. `POST /servers/{id}/restart` — Restart a virtual server instance
+12. `GET /servers/{id}/logs` — Retrieve server log entries
+
+### 2.2 Security & Authentication Policy
+- Read-only endpoints (`GET /servers`, `GET /servers/{id}`, `GET /servers/version`, `GET /healthz`) allow public access by default.
+- Modifying endpoints (`POST`, `PATCH`, `DELETE`) require administrative authentication via `_auth: bool = Depends(verify_api_key)`.
+- The authentication dependency checks:
+  1. `X-API-Key` HTTP header
+  2. `Authorization: Bearer <API_KEY>` HTTP header
+- If `settings.API_KEY` is configured as empty (`""`), authentication is bypassed to simplify local development.
+- Server password values in configuration dictionaries must be masked as `"***"` when `settings.MASK_PASSWORDS` is `True`.
+
+---
+
+# SECTION 3: DATA SCHEMAS & MODELS (Pydantic v2)
+
+All request payloads and response bodies adhere to Pydantic v2 standards:
+```python
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, Dict, Any, List
+
+class ServerModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: int = Field(..., description="Virtual server ID")
+    running: bool = Field(..., description="Execution status")
+    port: Optional[int] = Field(None, description="UDP/TCP port")
+    name: Optional[str] = Field(None, description="Server display name")
+    users: Optional[int] = Field(0, description="Connected user count")
+
+class ServerActionResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    status: str = Field("success", description="Action outcome")
+    message: str = Field(..., description="Human-readable result")
+    server_id: int = Field(..., description="Target server ID")
+
+class ServerConfigUpdate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    config: Dict[str, str] = Field(..., description="Key-value configuration map")
+
+class HealthResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    status: str = Field("healthy", description="API health status")
+    murmur_connected: bool = Field(..., description="Murmur Ice connection state")
+```
+
+---
+
+# SECTION 4: TESTING HARNESS & VERIFICATION
+
+The repository features 100% hermetic unit and integration testing via Pytest:
+- **`tests/mock_ice.py`**: Provides `MockMetaPrx` and `MockServerPrx` stubs implementing all Murmur Slice interfaces.
+- **`tests/conftest.py`**: Automatically configures the `FastAPI` `TestClient` and injects mock Ice proxies.
+- **Verification Command**:
+  ```bash
+  pytest
+  ```
+  All tests must pass without any network access or live Murmur daemons.
+
+---
+
+# SECTION 5: OFF-LIMITS & AGENT BOUNDARIES
+
+1. **`Murmur_ice.py`**: This file is compiled by ZeroC's `slice2py` tool from `Murmur.ice`. Never edit `Murmur_ice.py` manually.
+2. **Backward Compatibility Routes**: Legacy routes (`/server/getAllServers`, `/server/getServerDetail`, `/server/deleteServer`) are maintained for backwards compatibility with `include_in_schema=False`. Do not delete them.
+3. **Synchronous Ice Calls**: Never convert an Ice-calling endpoint to `async def`.
+

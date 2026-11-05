@@ -1,7 +1,8 @@
-.PHONY: help test test-verbose lint format run docker-build docker-up docker-down clean
+.PHONY: help test test-verbose lint format check run docker-build docker-up docker-down clean
 
 help:
 	@echo "Available commands:"
+	@echo "  make check         Run agent verification (architecture, lint, tests)"
 	@echo "  make test          Run pytest suite"
 	@echo "  make test-verbose  Run pytest suite with verbose output"
 	@echo "  make lint          Run ruff check"
@@ -11,6 +12,9 @@ help:
 	@echo "  make docker-up     Start stack via docker compose"
 	@echo "  make docker-down   Stop docker compose stack"
 	@echo "  make clean         Remove build and cache artifacts"
+
+check:
+	python scripts/verify.py
 
 test:
 	pytest
