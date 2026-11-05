@@ -1,0 +1,11 @@
+# Windsurf Agent Rules
+# Refer to AGENTS.md and .windsurf/rules/rules.md for complete documentation
+
+- FastAPI + ZeroC Ice 3.7 RPC for Murmur administration.
+- Use synchronous `def` (never `async def`) for all routes calling Ice proxies.
+- Wrap routes calling Ice with `@handle_ice_errors`.
+- Static endpoints must precede `/{id}` paths in `app/server_router.py`.
+- Authenticate mutating endpoints with `_auth: bool = Depends(verify_api_key)`.
+- Run `pytest` to verify all modifications against `tests/mock_ice.py`.
+- Never edit `Murmur_ice.py` directly.
+

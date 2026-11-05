@@ -1,0 +1,26 @@
+{
+  "name": "Mumble Server REST API Dev Environment",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/mumble-rest/venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"],
+        "editor.formatOnSave": true
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ]
+    }
+  },
+  "forwardPorts": [2332, 6502],
+  "postCreateCommand": "/opt/mumble-rest/venv/bin/pip install -r requirements-dev.txt",
+  "remoteUser": "root"
+}
+

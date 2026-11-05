@@ -1,0 +1,8 @@
+# Aider AI Coding Assistant Configuration
+test-cmd: "pytest"
+auto-test: true
+lint-cmd: "ruff check ."
+auto-lint: true
+read:
+  - "AGENTS.md"
+

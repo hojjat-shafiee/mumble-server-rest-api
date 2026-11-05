@@ -122,3 +122,28 @@ When editing or extending this codebase, adhere strictly to these conventions:
 
 ### 5.6 Data Serialization (`obj_to_dict`)
 - In `app/utils.py`, `obj_to_dict` handles `None`, primitive scalars (`int`, `float`, `str`, `bool`, `bytes`), collections, mappings, and objects with `__dict__` or `__slots__` safely without raising `AttributeError`.
+
+---
+
+## 6. Multi-Tool Agent Ecosystem Map
+
+This repository maintains synchronized configuration for the leading AI coding assistants:
+
+| Agent / Tool | Configuration File(s) | Role & Scope |
+| :--- | :--- | :--- |
+| **Universal / Root** | `AGENTS.md` | Primary cross-tool source of truth and architectural guardrails |
+| **Claude Code** | `CLAUDE.md` | Anthropic CLI agent instructions and fast verification commands |
+| **GitHub Copilot** | `.github/copilot-instructions.md` | Repository-wide instructions for Copilot Chat and Code Review |
+| **Cursor IDE** | `.cursor/rules/*.mdc`, `.cursorrules` | Granular scoped rules (`fastapi-endpoints`, `zeroc-ice-rpc`, etc.) |
+| **Windsurf Cascade** | `.windsurf/rules/rules.md`, `.windsurfrules` | Cascade agent directives and workflow rules |
+| **Aider CLI** | `.aider.conf.yml` | Auto-test (`pytest`) and auto-lint (`ruff`) configuration |
+| **Dev Containers** | `.devcontainer/devcontainer.json` | Pre-configured environment for cloud and containerized agents |
+
+---
+
+## 7. Progressive Disclosure & Further Reading
+
+For deeper domain knowledge without polluting root context windows:
+- **[System Architecture](docs/architecture.md)**: ZeroC Ice RPC lifecycle, threadpool delegation, Slice stubs, and exception translation.
+- **[Agent Implementation Workflow](docs/agent-workflow.md)**: Step-by-step checklist for building new endpoints, models, and mock tests.
+

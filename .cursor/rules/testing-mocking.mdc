@@ -1,0 +1,25 @@
+---
+description: Testing conventions, Pytest execution, and mock Ice fixtures
+globs: tests/**/*.py
+alwaysApply: false
+---
+
+# Testing & Mocking Guidelines
+
+## 1. Test Isolation & Mock Ice
+- Tests must never require a live Murmur daemon or native `python3-zeroc-ice` C extension.
+- Use the high-fidelity mock implementation in `tests/mock_ice.py` (`MockMetaPrx`, `MockServerPrx`, `MockCommunicator`).
+- In `tests/conftest.py`, the `mock_ice_meta` fixture automatically injects mock stubs into `app.ice_manager.ice_manager`.
+
+## 2. Test Execution
+- Run tests using `pytest` or `python -m pytest`.
+- Configuration is read from `pyproject.toml` (which configures `pythonpath = ["."]`).
+- Aim to maintain 100% test pass rate across the full suite before committing changes.
+
+## 3. Test Coverage Expectations
+When adding a new endpoint or feature:
+1. **Happy path**: Verify 200/201 response and schema structure.
+2. **Entity not found**: Verify 404 response when querying invalid server ID.
+3. **Authentication**: Verify 401 response when `API_KEY` is configured and invalid/missing token is sent.
+4. **Error handling**: Verify `@handle_ice_errors` correctly translates Ice exceptions to HTTP status codes.
+

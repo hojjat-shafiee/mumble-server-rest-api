@@ -1,0 +1,35 @@
+---
+description: FastAPI route definitions, synchronous Ice RPC dispatch, and endpoint security
+globs: app/*router*.py, app/api.py, main.py
+alwaysApply: false
+---
+
+# FastAPI Route Development Rules
+
+## 1. Synchronous vs Asynchronous Handlers
+- **Always use `def` (synchronous)** when calling ZeroC Ice RPC methods (e.g. `meta.getServer()`, `server.isRunning()`).
+- ZeroC Ice uses blocking socket I/O. FastAPI runs synchronous `def` routes in a threadpool worker, avoiding blocking the async event loop.
+- Only use `async def` for pure I/O endpoints that do NOT interact with ZeroC Ice (e.g., simple in-memory health checks).
+
+## 2. Route Registration & Ordering
+- Place **static routes before dynamic parameterized routes**:
+  - `GET /servers/version`
+  - `POST /servers/deleteServers`
+  - `GET /servers/userCount`
+  - Must all appear BEFORE `GET /servers/{id}`.
+- Follow RESTful resource conventions:
+  - Collection: `GET /servers`, `POST /servers`
+  - Item: `GET /servers/{id}`, `DELETE /servers/{id}`, `PATCH /servers/{id}`
+  - Actions: `POST /servers/{id}/start`, `POST /servers/{id}/stop`, `POST /servers/{id}/restart`
+  - Logs: `GET /servers/{id}/logs`
+
+## 3. Decorator & Error Handling
+- Always decorate endpoints that call Ice with `@handle_ice_errors` from `app.exceptions`.
+- Explicitly set `response_model` on all endpoints for OpenAPI documentation.
+- Raise `HTTPException(status_code=404, detail="Server ID {id} not found")` when an entity does not exist.
+
+## 4. Security & Authentication
+- All state-modifying endpoints (`POST`, `PATCH`, `DELETE`) must include:
+  `_auth: bool = Depends(verify_api_key)`
+- Read-only endpoints (`GET`) do not require authentication unless specified by configuration.
+

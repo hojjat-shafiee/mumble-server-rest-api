@@ -1,0 +1,25 @@
+---
+description: Pydantic v2 data models, schemas, and password masking rules
+globs: app/models.py
+alwaysApply: false
+---
+
+# Pydantic Models & Schemas
+
+## 1. Pydantic v2 Standards
+- Inherit from `pydantic.BaseModel`.
+- Use `model_config = ConfigDict(extra="ignore")` for model configuration (avoid deprecated Pydantic v1 `class Config:`).
+- Use `Field(..., description="...")` to provide OpenAPI schema documentation.
+
+## 2. Password Masking
+- Responses containing server configuration or credentials must respect `settings.MASK_PASSWORDS`.
+- When masking is active, passwords must be returned as `"***"`.
+- If `settings.MASK_PASSWORDS` is `False`, the actual password may be returned.
+
+## 3. Response Models
+- Every route in `app/server_router.py` must declare an explicit `response_model` matching a model defined in `app/models.py`.
+- Standard response shapes:
+  - `ServerModel`: Represents full server state.
+  - `ServerActionResponse`: Standardized `{ status: "success", message: "...", server_id: int }`.
+  - `HealthResponse`: Standardized health status and Murmur connection check.
+
