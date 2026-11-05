@@ -19,9 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     build-essential \
     libssl-dev \
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://zeroc.com/download/GPG-KEY-zeroc-release | gpg --dearmor -o /etc/apt/keyrings/zeroc.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/zeroc.gpg] https://zeroc.com/download/ice/3.7/debian12 stable main" > /etc/apt/sources.list.d/zeroc-ice.list \
+    && curl -fsSL https://download.zeroc.com/ice/3.7/debian12/ice-repo-3.7_1.0.0_all.deb -o /tmp/ice-repo.deb \
+    && dpkg -i /tmp/ice-repo.deb \
+    && rm /tmp/ice-repo.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
        python3-zeroc-ice \

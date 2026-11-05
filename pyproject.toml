@@ -24,7 +24,8 @@ pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
 filterwarnings = [
-    "ignore::starlette.testclient.StarletteDeprecationWarning",
+    "ignore:.*httpx.*",
+    "ignore::DeprecationWarning",
 ]
 
 [tool.ruff]
