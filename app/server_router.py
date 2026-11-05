@@ -1,26 +1,77 @@
-from fastapi import APIRouter, HTTPException
-from app import meta
-from app.models import ServerModel
-from app.utils import get_all_users_count, get_server_conf, get_server_port, obj_to_dict
+from fastapi import APIRouter, HTTPException, Depends, Query, status
+from typing import Any, Optional
 from datetime import timedelta
+import settings
+from app.ice_manager import get_ice_meta
+from app.models import ServerModel, ServerUpdateModel
+from app.utils import get_server_conf, get_server_port, obj_to_dict
+from app.security import verify_api_key
+from app.exceptions import handle_ice_errors
+
+router = APIRouter(tags=["Servers"])
 
 
-router = APIRouter()
+def _build_server_detail_dict(meta: Any, server: Any) -> dict[str, Any]:
+    """Helper to build serialized server detail dictionary."""
+    is_running = server.isRunning()
+    tree = obj_to_dict(server.getTree()) if is_running else None
+    
+    raw_password = get_server_conf(meta, server, "password")
+    if settings.MASK_PASSWORDS and raw_password:
+        password_value = "***"
+    else:
+        password_value = raw_password
+
+    uptime = server.getUptime() if is_running else 0
+    return {
+        "id": server.id(),
+        "name": get_server_conf(meta, server, "registername"),
+        "host": get_server_conf(meta, server, "host"),
+        "port": get_server_port(meta, server),
+        "address": "%s:%s" % (
+            get_server_conf(meta, server, "host"),
+            get_server_port(meta, server),
+        ),
+        "password": password_value,
+        "welcometext": get_server_conf(meta, server, "welcometext"),
+        "user_count": (is_running and len(server.getUsers())) or 0,
+        "maxusers": get_server_conf(meta, server, "users") or 0,
+        "running": is_running,
+        "uptime": uptime,
+        "humanize_uptime": str(timedelta(seconds=uptime) if is_running else ""),
+        "parent_channel": tree["c"] if tree and "c" in tree else None,
+        "sub_channels": tree["children"] if tree and "children" in tree else None,
+        "users": tree["users"] if tree and "users" in tree else None,
+        "registered_users": (
+            server.getRegisteredUsers("") if is_running and hasattr(server, "getRegisteredUsers") else None
+        ),
+        "log_length": server.getLogLen(),
+    }
 
 
-@router.get("/murmur-version")
-async def murmurVersion():
-    try:
-        version = meta.getVersion()
-        return {"version": f"{version}"}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+# ---------------------------------------------------------------------------
+# Version & Metadata
+# ---------------------------------------------------------------------------
+
+@router.get("/murmur-version", summary="Get Murmur Version")
+@handle_ice_errors
+def murmur_version(meta: Any = Depends(get_ice_meta)):
+    """Returns the underlying Murmur Ice version."""
+    version = meta.getVersion()
+    return {"version": f"{version}"}
 
 
-@router.get("/getAllServers")
-async def getAllServer():
+# ---------------------------------------------------------------------------
+# Server Listing & Details
+# ---------------------------------------------------------------------------
+
+@router.get("", summary="List all servers")
+@router.get("/getAllServers", summary="List all servers (Legacy alias)", include_in_schema=False)
+@handle_ice_errors
+def list_servers(meta: Any = Depends(get_ice_meta)):
     """
-    Lists all servers
+    Lists all virtual servers hosted by Murmur along with runtime statistics.
+    Uses synchronous execution in FastAPI worker threadpool to prevent event loop blocking.
     """
     servers = []
     for s in meta.getAllServers():
@@ -45,161 +96,254 @@ async def getAllServer():
                 "log_length": s.getLogLen(),
             }
         )
-
     return servers
 
 
-@router.get("/getServerDetail")
-async def getServerDetail(id: int):
+@router.get("/getServerDetail", summary="Get server detail (Legacy query alias)", include_in_schema=False)
+@handle_ice_errors
+def get_server_detail_legacy(id: int = Query(..., description="Server ID"), meta: Any = Depends(get_ice_meta)):
+    """Legacy alias retrieving server details using a query parameter (?id=X)."""
+    return get_server_detail(id=id, meta=meta)
+
+
+@router.get("/{id}", summary="Get server detail")
+@handle_ice_errors
+def get_server_detail(id: int, meta: Any = Depends(get_ice_meta)):
     """
-    return server's detail
+    Returns full details for a virtual server including channels, active users, and configuration.
     """
     server = meta.getServer(id)
     if server is None:
-        raise HTTPException(404, f"Server with id: {id} not found")
-
-    tree = obj_to_dict(server.getTree()) if server.isRunning() else None
-    json_data = {
-        "id": server.id(),
-        "name": get_server_conf(meta, server, "registername"),
-        "host": get_server_conf(meta, server, "host"),
-        "port": get_server_port(meta, server),
-        "address": "%s:%s"
-        % (
-            get_server_conf(meta, server, "host"),
-            get_server_port(meta, server),
-        ),
-        "password": get_server_conf(meta, server, "password"),
-        "welcometext": get_server_conf(meta, server, "welcometext"),
-        "user_count": (server.isRunning() and len(server.getUsers())) or 0,
-        "maxusers": get_server_conf(meta, server, "users") or 0,
-        "running": server.isRunning(),
-        "uptime": server.getUptime() if server.isRunning() else 0,
-        "humanize_uptime": str(
-            timedelta(seconds=server.getUptime()) if server.isRunning() else ""
-        ),
-        "parent_channel": tree["c"] if server.isRunning() else None,
-        "sub_channels": tree["children"] if server.isRunning() else None,
-        "users": tree["users"] if server.isRunning() else None,
-        "registered_users": (
-            server.getRegisteredUsers("") if server.isRunning() else None
-        ),
-        "log_length": server.getLogLen(),
-    }
-    return json_data
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Server with id {id} not found")
+    return _build_server_detail_dict(meta, server)
 
 
-@router.post("/createServer")
-async def createServer(model: ServerModel):
+# ---------------------------------------------------------------------------
+# Server Lifecycle Management
+# ---------------------------------------------------------------------------
+
+@router.post("", status_code=status.HTTP_201_CREATED, summary="Create a new server")
+@router.post("/createServer", status_code=status.HTTP_201_CREATED, summary="Create a server (Legacy alias)", include_in_schema=False)
+@handle_ice_errors
+def create_server(
+    model: ServerModel,
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
     """
-    Creates a server, starts server, and return server detail
+    Creates a new virtual server, applies configuration options, boots it up, and returns server details.
     """
     server = meta.newServer()
-    # Set conf if provided
-    server.setConf("password", model.password) if model.password else None
-    server.setConf("port", model.port) if model.port else None
-    server.setConf("timeout", model.timeout) if model.timeout else None
-    server.setConf("bandwidth", model.bandwidth) if model.bandwidth else None
-    server.setConf("users", model.users) if model.users else None
-    server.setConf("welcometext", model.welcomeText) if model.welcomeText else None
-    server.setConf("registername", model.registerName) if model.registerName else None
+    if model.password is not None:
+        server.setConf("password", model.password)
+    if model.port is not None:
+        server.setConf("port", str(model.port))
+    if model.timeout is not None:
+        server.setConf("timeout", str(model.timeout))
+    if model.bandwidth is not None:
+        server.setConf("bandwidth", str(model.bandwidth))
+    if model.users is not None:
+        server.setConf("users", str(model.users))
+    if model.welcomeText is not None:
+        server.setConf("welcometext", model.welcomeText)
+    if model.registerName is not None:
+        server.setConf("registername", model.registerName)
 
-    # Start server
     server.start()
-    return await getServerDetail(server.id())
+    return _build_server_detail_dict(meta, server)
 
 
-@router.delete("/deleteServer")
-async def deleteServer(id: int):
+@router.patch("/{id}", summary="Update server configuration")
+@handle_ice_errors
+def update_server_config(
+    id: int,
+    model: ServerUpdateModel,
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
     """
-    Shuts down and deletes a server
+    Updates the configuration of an existing virtual server.
     """
-
     server = meta.getServer(id)
-
     if server is None:
-        raise HTTPException(404, f"Server with id: {id} not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Server with id {id} not found")
 
-    # Stop server first if it is running
+    if model.password is not None:
+        server.setConf("password", model.password)
+    if model.timeout is not None:
+        server.setConf("timeout", str(model.timeout))
+    if model.bandwidth is not None:
+        server.setConf("bandwidth", str(model.bandwidth))
+    if model.users is not None:
+        server.setConf("users", str(model.users))
+    if model.welcomeText is not None:
+        server.setConf("welcometext", model.welcomeText)
+    if model.registerName is not None:
+        server.setConf("registername", model.registerName)
+
+    return {"message": f"Server {id} configuration updated successfully"}
+
+
+@router.delete("/deleteAllServers", summary="Delete all servers (Legacy alias)", include_in_schema=False)
+@router.delete("/all", summary="Delete all servers")
+@handle_ice_errors
+def delete_all_servers(
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
+    """
+    Stops and deletes all virtual servers on this Murmur instance.
+    """
+    deleted_servers: list[int] = []
+    for s in meta.getAllServers():
+        try:
+            s_id = s.id()
+            if s.isRunning():
+                s.stop()
+            s.delete()
+            deleted_servers.append(s_id)
+        except Exception:
+            continue
+    return {"deleted_servers": deleted_servers}
+
+
+@router.delete("/deleteServers", summary="Batch delete servers (Legacy alias)", include_in_schema=False)
+@router.post("/batch-delete", summary="Batch delete servers")
+@handle_ice_errors
+def batch_delete_servers(
+    id_list: list[int],
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
+    """
+    Stops and deletes multiple virtual servers by ID list.
+    """
+    deleted_servers: list[int] = []
+    for s_id in id_list:
+        server = meta.getServer(s_id)
+        if not server:
+            continue
+        try:
+            if server.isRunning():
+                server.stop()
+            server.delete()
+            deleted_servers.append(s_id)
+        except Exception:
+            continue
+    return {"deleted_servers": deleted_servers}
+
+
+@router.delete("/deleteServer", summary="Delete a server (Legacy query alias)", include_in_schema=False)
+@handle_ice_errors
+def delete_server_legacy(
+    id: int = Query(..., description="Server ID"),
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Legacy alias deleting a virtual server using query parameter (?id=X)."""
+    return delete_server(id=id, meta=meta, _auth=_auth)
+
+
+@router.delete("/{id}", summary="Delete a server")
+@handle_ice_errors
+def delete_server(
+    id: int,
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
+    """
+    Shuts down and deletes a virtual server instance.
+    """
+    server = meta.getServer(id)
+    if server is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Server with id {id} not found")
+
     if server.isRunning():
         server.stop()
 
-    # Delete server instance
     server.delete()
     return {"detail": f"server with id {id} deleted successfully"}
 
 
-@router.delete("/deleteServers")
-async def deleteServers(id_list: list[int]):
-    deletedServers: list[int] = []
-    for id in id_list:
-        server = meta.getServer(id)
-
-        if not server:
-            continue
-
-        if server.isRunning():
-            server.stop()
-
-        server.delete()
-        deletedServers.append(id)
-    return {"deleted servers": deletedServers}
-
-
-@router.delete("/deleteAllServers")
-async def deleteAllServers():
-    deletedServers: list[int] = []
-    for s in meta.getAllServers():
-        id = s.id()
-        await deleteServer(id)
-        deletedServers.append(id)
-    return {"deleted servers": deletedServers}
-
-
-@router.post("/{id}/start")
-def start(id: int):
-    """Starts server"""
+@router.post("/{id}/start", summary="Start a server")
+@handle_ice_errors
+def start(
+    id: int,
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Starts an inactive virtual server."""
     server = meta.getServer(id)
     if server is None:
-        raise HTTPException(404, f"Server with id: {id} not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Server with id {id} not found")
 
     if server.isRunning():
-        raise HTTPException(403, "Server already running.")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Server already running.")
     server.start()
     return {"message": f"server {id} started"}
 
 
-@router.post("/{id}/stop")
-def start(id: int):
-    """Stop server"""
+@router.post("/{id}/stop", summary="Stop a server")
+@handle_ice_errors
+def stop(
+    id: int,
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Stops an active virtual server."""
     server = meta.getServer(id)
     if server is None:
-        raise HTTPException(404, f"Server with id: {id} not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Server with id {id} not found")
 
     if not server.isRunning():
-        raise HTTPException(403, "Server already stopped.")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Server already stopped.")
     server.stop()
     return {"message": f"server {id} stopped"}
 
-def sortLogs(item):
-    return item["timestamp"]
 
-@router.get("/{id}/logs")
-def logs(id: int):
-    """Gets all server logs by server ID"""
+@router.post("/{id}/restart", summary="Restart a server")
+@handle_ice_errors
+def restart(
+    id: int,
+    meta: Any = Depends(get_ice_meta),
+    _auth: bool = Depends(verify_api_key),
+):
+    """Restarts a virtual server (stops if running, then starts)."""
     server = meta.getServer(id)
     if server is None:
-        raise HTTPException(404, f"Server with id: {id} not found")
-    logs = []
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Server with id {id} not found")
 
-    first = 0
-    last = -1
-    for log in server.getLog(first, last):
+    if server.isRunning():
+        server.stop()
+    server.start()
+    return {"message": f"server {id} restarted"}
+
+
+# ---------------------------------------------------------------------------
+# Server Logs
+# ---------------------------------------------------------------------------
+
+@router.get("/{id}/logs", summary="Get server logs")
+@handle_ice_errors
+def get_logs(
+    id: int,
+    first: int = Query(0, ge=0, description="First log index"),
+    last: int = Query(-1, description="Last log index (-1 for latest)"),
+    meta: Any = Depends(get_ice_meta),
+):
+    """Gets sorted server logs for the given server ID."""
+    server = meta.getServer(id)
+    if server is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Server with id {id} not found")
+
+    logs = []
+    log_entries = server.getLog(first, last) or []
+    for log in log_entries:
         logs.append(
             {
-                "message": log.txt,
-                "timestamp": log.timestamp,
+                "message": getattr(log, "txt", str(log)),
+                "timestamp": getattr(log, "timestamp", 0),
             }
         )
-    logs.sort(key=sortLogs)
+    logs.sort(key=lambda item: item["timestamp"])
     return logs

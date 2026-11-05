@@ -1,31 +1,46 @@
 services:
-  # mumble-server:
-  #   image: mumblevoip/mumble-server:latest
-  #   container_name: mumble-server
-  #   hostname: mumble-server
-  #   restart: on-failure
-  #   environment:
-  #     - MUMBLE_CONFIG_ICE= tcp -h 0.0.0.0 -p 6502
-  #     - MUMBLE_CONFIG_PORT= 50000
-  #     - MUMBLE_CONFIG_OPUSTHRESHOLD= 0
-  #     - MUMBLE_CONFIG_USERS= 100
-  #     - MUMBLE_CONFIG_USERSPERCHANNEL= 10
-  #     - MUMBLE_CONFIG_WELCOMETEXT= 'RestApiMumble'
-  #   expose:
-  #     - 6502
-  #   ports:
-  #     - "127.0.0.1:6502:6502"
-  #     - "50000-50050:50000-50050"
-  #     - "50000-50050:50000-50050/udp"
-  mumble-rest-api:
-    build: .
+  mumble-server:
+    image: mumblevoip/mumble-server:latest
+    container_name: mumble-server
+    hostname: mumble-server
+    restart: unless-stopped
     environment:
-      - MURMUR_ICE_HOST= your mumble server address
-      - MURMUR_ICE_PORT= 6502
+      - MUMBLE_CONFIG_ICE=tcp -h 0.0.0.0 -p 6502
+      - MUMBLE_CONFIG_PORT=64738
+      - MUMBLE_CONFIG_USERS=100
+      - MUMBLE_CONFIG_USERSPERCHANNEL=10
+      - MUMBLE_CONFIG_WELCOMETEXT=Mumble REST API Managed Server
+    ports:
+      - "64738:64738"
+      - "64738:64738/udp"
+      - "127.0.0.1:6502:6502"
+    volumes:
+      - mumble_data:/data
+    networks:
+      - mumble_net
+
+  mumble-rest-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mumble-rest-api
+    restart: unless-stopped
+    depends_on:
+      - mumble-server
+    environment:
+      - MURMUR_ICE_HOST=mumble-server
+      - MURMUR_ICE_PORT=6502
+      - MURMUR_ICE_TIMEOUT=3000
+      - ICE_SECRET=
+      - MASK_PASSWORDS=true
     ports:
       - "2332:2332"
-    # links:
-    #   - "mumble-server:server"
-    restart: on-failure
+    networks:
+      - mumble_net
+
+networks:
+  mumble_net:
+    driver: bridge
+
 volumes:
-  data: 
+  mumble_data:

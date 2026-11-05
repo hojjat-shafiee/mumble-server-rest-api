@@ -1,22 +1,12 @@
-import Murmur
-import settings
-import Ice
+from app.ice_manager import ice_manager, get_ice_meta
 
-_props = Ice.createProperties()
-_props.setProperty("Ice.ImplicitContext", "Shared")
-_props.setProperty("Ice.Default.EncodingVersion", "1.0")
-_props.setProperty("Ice.Default.InvocationTimeout", str(30 * 1000))
-_props.setProperty("Ice.MessageSizeMax", str(settings.ICE_MESSAGE_SIZE))
-_data = Ice.InitializationData()
-_data.properties = _props
-_communicator = Ice.initialize(_data)
+__all__ = ["ice_manager", "get_ice_meta"]
 
-_proxy = _communicator.stringToProxy(settings.ICE_HOST)
-secret = settings.ICE_SECRET
-if secret != '':
-    _communicator.getImplicitContext().put("secret", secret)
-meta = Murmur.MetaPrx.checkedCast(_proxy)
-if not meta:
-    raise RuntimeError("Invalid proxy")
-
-from app import api
+def __getattr__(name: str):
+    """
+    Lazy module attribute resolution for backward compatibility.
+    Allows `from app import meta` without connecting to Ice on import.
+    """
+    if name == "meta":
+        return ice_manager.get_meta()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
